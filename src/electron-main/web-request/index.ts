@@ -16,11 +16,14 @@ import {CorsProxy} from "./model";
 import {HEADERS} from "./const";
 import {IPC_MAIN_API_NOTIFICATION$} from "src/electron-main/api/constants";
 import {IPC_MAIN_API_NOTIFICATION_ACTIONS} from "src/shared/api/main";
+import {PROVIDER_REPO_MAP} from "src/shared/proton-apps-constants";
 import {
     buildUrlOriginsFailedMsgTester,
     curryFunctionMembers,
     depersonalizeLoggedUrl,
-    parseUrlOriginWithNullishCheck
+    parsePackagedWebClientUrl,
+    parseUrlOriginWithNullishCheck,
+    resolvePackagedWebClientApp
 } from "src/shared/util";
 import {getHeader, patchResponseHeaders, resolveCorsProxy} from "./service";
 import {resolveInitializedSession} from "src/electron-main/session";
@@ -51,10 +54,30 @@ const requestProxyCache = (() => {
     } as const;
 })();
 
-const resolveFakeOrigin = (requestDetails: DeepReadonly<OnBeforeSendHeadersListenerDetails>): string => {
-    // protonmail doesn't care much about "origin" value, so we resolve the value from a request
-    return parseUrlOriginWithNullishCheck(requestDetails.url);
-};
+const resolveRequestOrigin: (arg: DeepReadonly<OnBeforeSendHeadersListenerDetails>) => string = (() => {
+    const protonAppTypeToOriginMap: Readonly<Record<keyof typeof PROVIDER_REPO_MAP, string>> = {
+        "proton-mail": "https://beta.protonmail.com",
+        "proton-account": "https://account.protonmail.com",
+        "proton-calendar": "https://calendar.protonmail.com",
+        "proton-contacts": "https://contacts.protonmail.com",
+        "proton-drive": "https://drive.protonmail.com",
+    };
+    const result: typeof resolveRequestOrigin = ({url: requestUrl, frame}) => {
+        if (frame) {
+            const protonAppUrl = parsePackagedWebClientUrl(frame.url);
+            const protonAppType = protonAppUrl && resolvePackagedWebClientApp(protonAppUrl);
+            if (protonAppType) {
+                // making the XHR request origin value look close to the officially used values
+                // see the "subdomain" part in the APPS_CONFIGURATION constant located in the "proton-shared" project:
+                // https://github.com/ProtonMail/proton-shared/blob/8b54553382e8fa3b866b67baaca9c508e8f33bb0/lib/constants.ts#L37
+                return protonAppTypeToOriginMap[protonAppType.project];
+            }
+        }
+        // protonmail doesn't care much about "origin" value, so we resolve the value from the request's url
+        return parseUrlOriginWithNullishCheck(requestUrl);
+    };
+    return result;
+})();
 
 const isProtonEmbeddedUrl = (() => {
     // https://github.com/ProtonMail/proton-shared/blob/84c149ebd0419e13e9a1504404a1d1803c53500c/lib/helpers/image.ts#L171
@@ -203,7 +226,7 @@ export function initWebRequestListenersByAccount(
 
             if (corsProxy) {
                 const {name} = getHeader(requestHeaders, HEADERS.request.origin) || {name: HEADERS.request.origin};
-                requestHeaders[name] = resolveFakeOrigin(details);
+                requestHeaders[name] = resolveRequestOrigin(details);
                 requestProxyCache.patch(details, {corsProxy});
             }
 
