@@ -225,8 +225,16 @@ export function initWebRequestListenersByAccount(
             const corsProxy = resolveCorsProxy(details, allowedOrigins);
 
             if (corsProxy) {
-                const {name} = getHeader(requestHeaders, HEADERS.request.origin) || {name: HEADERS.request.origin};
-                requestHeaders[name] = resolveRequestOrigin(details);
+                const {name: originHeaderName} = getHeader(requestHeaders, HEADERS.request.origin) ?? {name: HEADERS.request.origin};
+                const originHeaderValue = resolveRequestOrigin(details);
+
+                requestHeaders[originHeaderName] = originHeaderValue;
+
+                if (new URL(details.url).pathname.startsWith("/api/drive/")) {
+                    const {name: refererHeaderName} = getHeader(requestHeaders, HEADERS.request.referer) ?? {name: HEADERS.request.referer};
+                    requestHeaders[refererHeaderName] = `${originHeaderValue}/u/0/`;
+                }
+
                 requestProxyCache.patch(details, {corsProxy});
             }
 

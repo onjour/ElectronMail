@@ -4,6 +4,7 @@ export const HEADERS = {
         accessControlRequestHeaders: "Access-Control-Request-Headers",
         accessControlRequestMethod: "Access-Control-Request-Method",
         contentType: "Content-Type",
+        referer: "Referer",
     },
     response: {
         accessControlAllowCredentials: "Access-Control-Allow-Credentials",
